@@ -9,7 +9,7 @@ import sys
 
 class InvalidStatusCodeException(Exception):
     def __init__(self, message):
-        self.message = message 
+        self.message = message
     def __str__(self):
         return repr(self.message)
 
@@ -23,7 +23,7 @@ class AuthBot(irc.IRCClient):
         self.source_ip = config.get('auth_bot', 'source_ip')
         self.channels = config.get('auth_bot', 'channels').split(', ')
         self.xmlrpc_url = "http://%s:%s/xmlrpc" % (config.get('auth_bot', 'xmlrpc_server'), config.get('auth_bot', 'xmlrpc_server_port'))
-	self.api_url = config.get('auth_bot', 'api_url')
+        self.api_url = config.get('auth_bot', 'api_url')
         self.log = log
 
         self.channels_to_give = {}
@@ -32,7 +32,7 @@ class AuthBot(irc.IRCClient):
         self.log.msg("Starting XMLRPC auth.")
         self.server = xmlrpc.Server(self.xmlrpc_url)
         result = self.server.atheme.login(self.nickname, self.passwd)
-       
+
         self.log.msg("XMLRPC auth complete. Result: %s" % result)
 
         if len(result) != 20:
@@ -59,8 +59,8 @@ class AuthBot(irc.IRCClient):
         return True
 
     def is_key_valid(self, key):
-        allowed_set = set(string.lowercase + string.digits)
-        return all(x in allowed_set for x in key) and len(key) is 32
+        allowed_set = set(string.uppercase + string.lowercase + string.digits)
+        return all(x in allowed_set for x in key) and len(key) is 25
 
     def is_user_registered(self, username):
         return self.xmlrpc_send_command('nickserv', 'info', username)
@@ -78,16 +78,17 @@ class AuthBot(irc.IRCClient):
 
     def create_channel(self, channel, user):
         #current race condition exists here when multiple users request the same channel simultaneously
-        self.channels_to_give[str(channel)] = [user] 
-
-        self.log.msg("Channel: %s" % channel)
+        #self.channels_to_give[str(channel)] = [user]
+        self.log.msg("Creating channel: %s" % channel)
         self.join(str(channel))
-
+        self.msg('ChanServ', str('FREGISTER %s' % channel))
+        self.msg('ChanServ', str('FTRANSFER %s %s' % (channel, user)))
+        self.msg(user, "You've successfully been granted operator access to {0}. To join, type /join {0}. If you have any questions, type /join #help, ask your question(s), and someone will gladly provide assistance.".format(channel))
+#        self.part(str(channel))
     #will always attempt to grab oper in any channel it joins
     def joined(self, channel):
         self.log.msg("Joined channel %s, taking op." % channel)
         self.msg('operserv', str('mode %s +o %s' % (channel, self.nickname)))
-
     #will always attempt to register any channel it is given oper in
     def modeChanged(self, user, channel, set, modes, args):
         self.log.msg("MODECHANGE: user=%s, channel=%s, set=%s, modes=%s, args=%s" % (user, channel, set, modes, args))
@@ -109,19 +110,19 @@ class AuthBot(irc.IRCClient):
                    self.msg(user, "You've successfully been granted operator access to {0}. To join, type /join {0}. If you have any questions, type /join #help, ask your question(s),  and someone will gladly provide assistance.".format(channel))
 
     def validate_key(self, key):
-        return self._rest_communicate('/', key)        
+        return self._rest_communicate('/', key)
 
     def expire_key(self, key):
         return self._rest_communicate('/use', key, {'status':'true'})
 
     def _rest_communicate(self, path, key, data=None):
         url = self.api_url + '/api/v1/modekey' + path
-        try:    
+        try:
             response = requests.get(url, params={'key':key}, data=data)
         except requests.RequestException as request_exception:
             self.log.err('Requests exception! key=%s, url=%s' %(key, url))
             raise request_exception
-    
+
         if response.status_code is not 200:
             self.log.err('Response from Snoonet REST API: %s' % response.status_code)
             raise InvalidStatusCodeException('Invalid response code from REST API [%s].' % response.status_code)
@@ -130,7 +131,7 @@ class AuthBot(irc.IRCClient):
 
     def signedOn(self):
         for chan in self.channels:
-            self.log.msg('joining %s.' % chan) 
+            self.log.msg('joining %s.' % chan)
             self.join(chan)
 
         self.msg('NickServ', 'IDENTIFY %s' % self.passwd)
@@ -199,8 +200,11 @@ class AuthBot(irc.IRCClient):
 
     def privmsg(self, user, channel, msg):
         if channel == self.nickname:
-            self.log.msg('Received whisper from %s' % user)      
+            self.log.msg('Received whisper from %s' % user)
             self.process_whisper(user, msg)
+
+    def noticed(self, user, channel, msg):
+        self.log.msg('Received notice from %s: "%s"' % (user, msg))
 
 class AuthBotFactory(protocol.ClientFactory):
     def __init__(self, config, log):
@@ -233,3 +237,4 @@ def start_auth_bot():
     port = int(config.get('auth_bot', 'irc_server_port'))
     reactor.connectTCP(host, port, factory)
     reactor.run()
+
