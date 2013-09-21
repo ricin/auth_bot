@@ -32,7 +32,7 @@ class AuthBot(irc.IRCClient):
         self.log.msg("Starting XMLRPC auth.")
         self.server = xmlrpc.Server(self.xmlrpc_url)
         result = self.server.atheme.login(self.nickname, self.passwd)
-        
+       
         self.log.msg("XMLRPC auth complete. Result: %s" % result)
 
         if len(result) != 20:
@@ -59,8 +59,8 @@ class AuthBot(irc.IRCClient):
         return True
 
     def is_key_valid(self, key):
-        allowed_set = set(string.uppercase + string.lowercase + string.digits)
-        return all(x in allowed_set for x in key) and len(key) is 25
+        allowed_set = set(string.lowercase + string.digits)
+        return all(x in allowed_set for x in key) and len(key) is 32
 
     def is_user_registered(self, username):
         return self.xmlrpc_send_command('nickserv', 'info', username)
